@@ -48,6 +48,7 @@ const modalOverlay = document.getElementById("modal-overlay");
 const modalTitle = document.getElementById("modal-title");
 const fTitle = document.getElementById("f-title");
 const fDate = document.getElementById("f-date");
+const fEndDate = document.getElementById("f-end-date");
 const fTime = document.getElementById("f-time");
 const fCategory = document.getElementById("f-category");
 const fNotes = document.getElementById("f-notes");
@@ -202,7 +203,7 @@ function renderCalendar() {
     cellEl.appendChild(numEl);
 
     const dayEvents = events
-      .filter(e => e.date === dateStr)
+      .filter(e => dateStr >= e.date && dateStr <= (e.endDate || e.date))
       .sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
     const MAX_SHOWN = 3;
@@ -210,8 +211,9 @@ function renderCalendar() {
       const chip = document.createElement("div");
       chip.className = "event-chip";
       chip.style.background = categoryColor(ev.category);
-      chip.textContent = (ev.time ? ev.time + " " : "") + ev.title;
-      chip.onclick = (e) => { e.stopPropagation(); openModal(dateStr, ev); };
+      const isStart = dateStr === ev.date;
+      chip.textContent = isStart ? (ev.time ? ev.time + " " : "") + ev.title : "→ " + ev.title;
+      chip.onclick = (e) => { e.stopPropagation(); openModal(ev.date, ev); };
       cellEl.appendChild(chip);
     });
     if (dayEvents.length > MAX_SHOWN) {
@@ -231,7 +233,8 @@ function openModal(dateStr, existingEvent) {
   editingId = existingEvent ? existingEvent.id : null;
   modalTitle.textContent = existingEvent ? "Edit Event" : "New Event";
   fTitle.value = existingEvent ? existingEvent.title : "";
-  fDate.value = dateStr;
+  fDate.value = existingEvent ? existingEvent.date : dateStr;
+  fEndDate.value = existingEvent ? (existingEvent.endDate || existingEvent.date) : "";
   fTime.value = existingEvent ? (existingEvent.time || "") : "";
   fCategory.value = existingEvent ? existingEvent.category : CATEGORIES[0].key;
   fNotes.value = existingEvent ? (existingEvent.notes || "") : "";
@@ -255,11 +258,15 @@ document.getElementById("save-btn").onclick = () => {
   if (!configured) { alert("GitHub sync isn't configured yet — see SETUP.md."); return; }
 
   ensureUsername((username) => {
+    const startDate = fDate.value;
+    const endDate = fEndDate.value && fEndDate.value >= startDate ? fEndDate.value : startDate;
+
     if (editingId) {
       const ev = events.find(e => e.id === editingId);
       if (ev) {
         ev.title = title;
-        ev.date = fDate.value;
+        ev.date = startDate;
+        ev.endDate = endDate;
         ev.time = fTime.value || "";
         ev.category = fCategory.value;
         ev.notes = fNotes.value.trim();
@@ -268,7 +275,8 @@ document.getElementById("save-btn").onclick = () => {
       events.unshift({
         id: uid(),
         title,
-        date: fDate.value,
+        date: startDate,
+        endDate,
         time: fTime.value || "",
         category: fCategory.value,
         notes: fNotes.value.trim(),

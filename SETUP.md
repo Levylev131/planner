@@ -1,74 +1,63 @@
 # One-time setup
 
-This app stores events in a Firebase Firestore database and syncs both of you to it **in real time** — when either person adds/edits/deletes an event, the other person's screen updates within a second or two, no refresh needed. Do these steps yourself in the Firebase console (free tier is plenty for 2 people).
+This app stores events in a GitHub Gist and syncs both phones/computers to it — same pattern as your Grocery List app. Do these steps yourself in PowerShell — this keeps your token out of the chat with Claude entirely.
 
-## 1. Create a Firebase project
+Updates aren't instant: each device polls the gist every 6 seconds, so an event you add typically shows up on your partner's screen within about 5-10 seconds.
 
-1. Go to https://console.firebase.google.com
-2. Click **Add project**, give it a name (e.g. "our-calendar"), and finish the wizard (Google Analytics is optional — you can skip it).
+## 1. Create a token (scoped to Gists only, nothing else)
 
-## 2. Turn on Firestore
+Open this link (pre-fills the minimal "gist" scope):
+https://github.com/settings/tokens/new?scopes=gist&description=Shared%20Calendar
 
-1. In the left sidebar, click **Build > Firestore Database**.
-2. Click **Create database**.
-3. Choose **Start in test mode** for now (we'll lock it down properly in step 4).
-4. Pick the region closest to you, click **Enable**.
+- Expiration: "No expiration" (so the calendar keeps working long-term without you having to redo this)
+- Click **Generate token**, then copy it (GitHub only shows it once)
 
-## 3. Register a web app and get your config
+**Security note:** this token can only create/read/edit your Gists — it cannot touch your repos or anything else on your account. It will end up readable in this app's client-side code once hosted, since there's no server to hide it behind. That's a deliberate, accepted trade-off for keeping this simple (no backend to run/pay for). If you're ever worried about it, revoke/regenerate it anytime from https://github.com/settings/tokens.
 
-1. In the project overview page, click the **</>** (web) icon to add a web app.
-2. Give it a nickname (e.g. "calendar-web"), don't check "Firebase Hosting."
-3. It'll show you a `firebaseConfig` object like:
-   ```js
-   const firebaseConfig = {
-     apiKey: "...",
-     authDomain: "...",
-     projectId: "...",
-     storageBucket: "...",
-     messagingSenderId: "...",
-     appId: "..."
-   };
-   ```
-4. Open `firebase-config.js` in this folder and paste those values in.
+## 2. Create the gist that will hold the calendar
 
-   **Note:** unlike a GitHub token, this config is *meant* to be visible in client-side code — Firebase's own docs say so. Real protection comes from the security rules in the next step, not from hiding this file.
+In PowerShell, in this folder:
 
-## 4. Lock down the security rules
+```powershell
+$TOKEN = "paste-your-token-here"
+$body = @{
+  description = "Shared Calendar data"
+  public = $false
+  files = @{ "calendar.json" = @{ content = '{"events":[]}' } }
+} | ConvertTo-Json -Depth 5
 
-By default "test mode" allows anyone on the internet to read/write your database, and it auto-expires in 30 days. Replace it with rules scoped to just the `events` collection:
+$resp = Invoke-RestMethod -Uri "https://api.github.com/gists" -Method Post `
+  -Headers @{ Authorization = "token $TOKEN"; Accept = "application/vnd.github+json" } `
+  -Body $body
 
-1. In Firestore, go to the **Rules** tab.
-2. Replace the contents with:
-   ```
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /events/{eventId} {
-         allow read, write: if true;
-       }
-       match /{document=**} {
-         allow read, write: if false;
-       }
-     }
-   }
-   ```
-3. Click **Publish**.
+Write-Host "GIST_ID:" $resp.id
+```
 
-   This means anyone with your app's URL + config could technically read/edit events (same trust model as the Grocery List app's Gist token) — fine since only you two will have the link. If you ever want real access control, tell Claude and we can add Firebase Authentication with an allow-list of your two emails.
+Copy the printed `GIST_ID`.
 
-## 5. Try it locally
+## 3. Fill in `app.js`
+
+Open `app.js` and set the two constants near the top:
+
+```js
+const TOKEN = "paste-your-token-here";
+const GIST_ID = "paste-the-id-from-step-2";
+```
+
+## 4. Try it locally
 
 ```powershell
 python -m http.server 8080
 ```
 
-Open http://localhost:8080 in a browser. Add an event, then open the same URL in a second tab (or your phone on the same Wi-Fi, using your PC's local IP) — the event should appear there within a second or two.
+Open http://localhost:8080 in a browser. Add an event, refresh — it should still be there (confirms the gist sync works). Open a second tab to watch an event you add in one appear in the other after a few seconds.
 
-## 6. Host it so both phones can reach it (tell Claude when ready)
+## 5. Host it so both phones can reach it (tell Claude when ready)
 
-Local hosting only works on your own PC/Wi-Fi. For real access from anywhere, this needs to be pushed to a GitHub repo with GitHub Pages or Netlify — ask Claude to do this once steps 1–5 work.
+Local hosting only works on your own PC. For real phone access from anywhere (not just your home Wi-Fi), this needs to be pushed to a GitHub repo with GitHub Pages or Netlify turned on — ask Claude to do this once steps 1-4 work, since creating a repo and making it public/deployed is worth confirming first.
 
 ## Customizing
 
 - **Categories/colors:** edit the `CATEGORIES` array near the top of `app.js` — add, remove, rename, or recolor as you like.
 - **App name/icon:** edit `manifest.json` and swap the files in `icons/` (currently placeholders copied from the Grocery List app).
+- **Sync speed:** change `POLL_MS` in `app.js` (currently 6000ms) if you want faster/slower checks — lower means quicker updates but more API calls against GitHub's rate limit.

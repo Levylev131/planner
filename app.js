@@ -1,8 +1,11 @@
-import { firebaseConfig } from "./firebase-config.js";
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+// ---- One-time setup: fill these in per SETUP.md, then this file is done. ----
+const TOKEN = "YOUR_TOKEN_HERE"; // classic GitHub PAT, "gist" scope only
+const GIST_ID = "YOUR_GIST_ID_HERE"; // returned when the gist is created (see SETUP.md)
+const FILENAME = "calendar.json";
+// -----------------------------------------------------------------------
+
+const POLL_MS = 6000;
+const SAVE_DEBOUNCE_MS = 400;
 
 // ── Customize categories here: name + color ──
 const CATEGORIES = [
@@ -12,18 +15,20 @@ const CATEGORIES = [
   { key: "reminder", label: "Reminder", color: "#e03131" }
 ];
 
+const configured = TOKEN !== "YOUR_TOKEN_HERE" && GIST_ID !== "YOUR_GIST_ID_HERE";
+
 const setupBanner = document.getElementById("setup-banner");
 const syncDot = document.getElementById("sync-dot");
 
-let db = null;
-let eventsCol = null;
+function setSyncStatus(status) {
+  syncDot.className = "sync-dot " + status;
+  syncDot.title = status === "ok" ? "Synced" : status === "busy" ? "Syncing..." : "Sync error";
+}
 
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  setupBanner.classList.remove("hidden");
-} else {
-  const fbApp = initializeApp(firebaseConfig);
-  db = getFirestore(fbApp);
-  eventsCol = collection(db, "events");
+function uid() {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : "id-" + Date.now() + "-" + Math.random().toString(16).slice(2);
 }
 
 // ── State ──
@@ -31,6 +36,9 @@ let viewDate = new Date();
 viewDate.setDate(1);
 let events = []; // {id, title, date, time, category, notes, addedBy}
 let editingId = null;
+let lastKnownRemoteContent = null;
+let saveTimer = null;
+let pushInFlight = false;
 
 // ── Elements ──
 const gridEl = document.getElementById("grid");
@@ -63,6 +71,73 @@ function ensureUsername(cb) {
     nameOverlay.classList.add("hidden");
     cb(v);
   };
+}
+
+// ── Local cache (so the app has something to show before the first fetch) ──
+function loadCache() {
+  try {
+    const raw = localStorage.getItem("calendar_cache");
+    if (raw) events = JSON.parse(raw).events || [];
+  } catch (e) {
+    events = [];
+  }
+}
+function saveCache() {
+  localStorage.setItem("calendar_cache", JSON.stringify({ events }));
+}
+
+// ── Gist sync ──
+function scheduleSave() {
+  saveCache();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(pushRemote, SAVE_DEBOUNCE_MS);
+}
+
+async function pushRemote() {
+  if (!configured) return;
+  pushInFlight = true;
+  setSyncStatus("busy");
+  const content = JSON.stringify({ events });
+  try {
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `token ${TOKEN}`,
+        Accept: "application/vnd.github+json",
+      },
+      body: JSON.stringify({ files: { [FILENAME]: { content } } }),
+    });
+    if (!res.ok) throw new Error("push failed: " + res.status);
+    lastKnownRemoteContent = content;
+    setSyncStatus("ok");
+  } catch (e) {
+    setSyncStatus("error");
+  } finally {
+    pushInFlight = false;
+  }
+}
+
+async function fetchRemote() {
+  if (!configured) return;
+  try {
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    if (!res.ok) throw new Error("fetch failed: " + res.status);
+    const data = await res.json();
+    const content = data.files && data.files[FILENAME] && data.files[FILENAME].content;
+    if (content == null) throw new Error("missing file in gist");
+    if (content !== lastKnownRemoteContent && !pushInFlight) {
+      lastKnownRemoteContent = content;
+      const parsed = JSON.parse(content);
+      events = parsed.events || [];
+      saveCache();
+      renderCalendar();
+    }
+    setSyncStatus("ok");
+  } catch (e) {
+    setSyncStatus("error");
+  }
 }
 
 // ── Legend ──
@@ -177,39 +252,43 @@ modalOverlay.onclick = (e) => { if (e.target === modalOverlay) closeModal(); };
 document.getElementById("save-btn").onclick = () => {
   const title = fTitle.value.trim();
   if (!title) { fTitle.focus(); return; }
-  if (!db) { alert("Firebase isn't configured yet — see SETUP.md."); return; }
+  if (!configured) { alert("GitHub sync isn't configured yet — see SETUP.md."); return; }
 
   ensureUsername((username) => {
-    const payload = {
-      title,
-      date: fDate.value,
-      time: fTime.value || "",
-      category: fCategory.value,
-      notes: fNotes.value.trim(),
-      addedBy: username,
-      updatedAt: serverTimestamp()
-    };
     if (editingId) {
-      updateDoc(doc(db, "events", editingId), payload).catch(showSyncError);
+      const ev = events.find(e => e.id === editingId);
+      if (ev) {
+        ev.title = title;
+        ev.date = fDate.value;
+        ev.time = fTime.value || "";
+        ev.category = fCategory.value;
+        ev.notes = fNotes.value.trim();
+      }
     } else {
-      payload.createdAt = serverTimestamp();
-      addDoc(eventsCol, payload).catch(showSyncError);
+      events.unshift({
+        id: uid(),
+        title,
+        date: fDate.value,
+        time: fTime.value || "",
+        category: fCategory.value,
+        notes: fNotes.value.trim(),
+        addedBy: username,
+      });
     }
+    renderCalendar();
+    scheduleSave();
     closeModal();
   });
 };
 
 deleteBtn.onclick = () => {
-  if (!editingId || !db) return;
+  if (!editingId) return;
   if (!confirm("Delete this event?")) return;
-  deleteDoc(doc(db, "events", editingId)).catch(showSyncError);
+  events = events.filter(e => e.id !== editingId);
+  renderCalendar();
+  scheduleSave();
   closeModal();
 };
-
-function showSyncError(err) {
-  console.error(err);
-  alert("Couldn't sync: " + err.message);
-}
 
 // ── Nav ──
 document.getElementById("prev-btn").onclick = () => { viewDate.setMonth(viewDate.getMonth() - 1); renderCalendar(); };
@@ -217,26 +296,21 @@ document.getElementById("next-btn").onclick = () => { viewDate.setMonth(viewDate
 document.getElementById("today-btn").onclick = () => { viewDate = new Date(); viewDate.setDate(1); renderCalendar(); };
 document.getElementById("add-fab").onclick = () => openModal(todayStr(), null);
 
-// ── Live sync ──
-if (db) {
-  onSnapshot(eventsCol, (snap) => {
-    events = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderCalendar();
-    syncDot.classList.add("connected");
-    syncDot.classList.remove("error");
-    syncDot.title = "Synced";
-  }, (err) => {
-    console.error(err);
-    syncDot.classList.add("error");
-    syncDot.title = "Sync error: " + err.message;
-  });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") fetchRemote();
+});
+
+// ── Init ──
+if (!configured) {
+  setupBanner.classList.remove("hidden");
+  setSyncStatus("error");
 }
-
 renderLegend();
+loadCache();
 renderCalendar();
+fetchRemote();
+setInterval(fetchRemote, POLL_MS);
 
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
-  });
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
 }

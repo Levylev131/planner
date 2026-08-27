@@ -1,10 +1,9 @@
-const CACHE_NAME = "shared-calendar-v1";
+const CACHE_NAME = "shared-calendar-v2";
 const SHELL_FILES = [
   "./",
   "index.html",
   "styles.css",
   "app.js",
-  "firebase-config.js",
   "manifest.json",
 ];
 
@@ -26,7 +25,7 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (url.origin !== location.origin) return; // let Firebase/Firestore calls pass straight through
+  if (url.origin !== location.origin) return; // let GitHub API calls pass straight through
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );

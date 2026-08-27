@@ -1,6 +1,6 @@
 // ---- One-time setup: fill these in per SETUP.md, then this file is done. ----
-const TOKEN = "YOUR_TOKEN_HERE"; // classic GitHub PAT, "gist" scope only
-const GIST_ID = "YOUR_GIST_ID_HERE"; // returned when the gist is created (see SETUP.md)
+const TOKEN = "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"; // classic GitHub PAT, "gist" scope only
+const GIST_ID = "51eecb52a1287ba1fc2ae5b39ba5465f"; // returned when the gist is created (see SETUP.md)
 const FILENAME = "calendar.json";
 // -----------------------------------------------------------------------
 

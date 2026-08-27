@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Our Calendar</title>
+<meta name="theme-color" content="#f0f4f8">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="title-row">
+    <h1 class="app-title">Our Calendar</h1>
+    <span id="sync-dot" class="sync-dot" title="Connecting..."></span>
+  </div>
+  <div class="nav-row">
+    <button id="prev-btn" class="nav-btn" aria-label="Previous month">&#8592;</button>
+    <span id="month-label" class="month-label"></span>
+    <button id="next-btn" class="nav-btn" aria-label="Next month">&#8594;</button>
+    <button id="today-btn" class="today-btn">Today</button>
+  </div>
+</div>
+
+<div class="legend" id="legend"></div>
+
+<div class="calendar-wrap">
+  <div class="weekday-row">
+    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+  </div>
+  <div id="grid" class="grid"></div>
+</div>
+
+<button id="add-fab" class="fab" aria-label="Add event">+</button>
+
+<!-- Event editor modal -->
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">New Event</h2>
+      <button id="modal-close" class="icon-btn" aria-label="Close">&times;</button>
+    </div>
+
+    <label class="field-label">Title</label>
+    <input id="f-title" type="text" placeholder="Dinner with...">
+
+    <label class="field-label">Date</label>
+    <input id="f-date" type="date">
+
+    <div class="field-row">
+      <div>
+        <label class="field-label">Time (optional)</label>
+        <input id="f-time" type="time">
+      </div>
+      <div>
+        <label class="field-label">Category</label>
+        <select id="f-category"></select>
+      </div>
+    </div>
+
+    <label class="field-label">Notes (optional)</label>
+    <textarea id="f-notes" rows="2" placeholder="Location, details..."></textarea>
+
+    <div class="added-by-row" id="added-by-row"></div>
+
+    <div class="modal-actions">
+      <button id="delete-btn" class="btn btn-danger hidden">Delete</button>
+      <div class="spacer"></div>
+      <button id="cancel-btn" class="btn btn-ghost">Cancel</button>
+      <button id="save-btn" class="btn btn-primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- First-run name prompt -->
+<div id="name-overlay" class="modal-overlay hidden">
+  <div class="modal small">
+    <h2>Who's this?</h2>
+    <p class="muted">So events show who added them. You can change this later.</p>
+    <input id="name-input" type="text" placeholder="Your name">
+    <div class="modal-actions">
+      <div class="spacer"></div>
+      <button id="name-save-btn" class="btn btn-primary">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Setup-needed banner (shown if firebase-config.js is missing/unfilled) -->
+<div id="setup-banner" class="setup-banner hidden">
+  Firebase isn't configured yet — see SETUP.md to connect real-time sync.
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

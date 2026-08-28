@@ -32,8 +32,18 @@ function uid() {
 }
 
 // ── State ──
-let viewDate = new Date();
-viewDate.setDate(1);
+function sundayOnOrBefore(d) {
+  const r = new Date(d);
+  r.setDate(r.getDate() - r.getDay());
+  return r;
+}
+function monthStartAnchor(year, month) {
+  return sundayOnOrBefore(new Date(year, month, 1));
+}
+// gridAnchor is the Sunday that starts the visible 6-week (42-day) grid.
+// Swiping shifts it by exactly one week; the month buttons and Today snap
+// it back to a calendar-month-aligned start.
+let gridAnchor = monthStartAnchor(new Date().getFullYear(), new Date().getMonth());
 let events = []; // {id, title, date, time, category, notes, addedBy}
 let calendarTitle = "Our Calendar";
 let editingId = null;
@@ -208,40 +218,25 @@ function todayStr() {
 }
 
 // ── Calendar render ──
-function renderCalendar() {
-  monthLabel.textContent = viewDate.toLocaleString("default", { month: "long", year: "numeric" });
-  gridEl.innerHTML = "";
-
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-  const firstDay = new Date(year, month, 1);
-  const startOffset = firstDay.getDay(); // 0=Sun
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const daysInPrevMonth = new Date(year, month, 0).getDate();
-
-  const cells = [];
-  for (let i = startOffset - 1; i >= 0; i--) {
-    cells.push({ day: daysInPrevMonth - i, other: true, date: new Date(year, month - 1, daysInPrevMonth - i) });
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ day: d, other: false, date: new Date(year, month, d) });
-  }
-  while (cells.length % 7 !== 0 || cells.length < 42) {
-    const nextIdx = cells.length - (startOffset + daysInMonth) + 1;
-    cells.push({ day: nextIdx, other: true, date: new Date(year, month + 1, nextIdx) });
-  }
-
+// Renders a fixed 6-week (42-day) window starting at `anchor` (a Sunday).
+// Days outside `refYear`/`refMonth` (the month shown in the header) are dimmed.
+function buildWeekGrid(container, anchor, refYear, refMonth) {
+  container.innerHTML = "";
   const tStr = todayStr();
 
-  cells.forEach(cell => {
-    const dateStr = toDateStr(cell.date);
+  for (let i = 0; i < 42; i++) {
+    const date = new Date(anchor);
+    date.setDate(date.getDate() + i);
+    const dateStr = toDateStr(date);
+    const other = date.getMonth() !== refMonth || date.getFullYear() !== refYear;
+
     const cellEl = document.createElement("div");
-    cellEl.className = "day-cell" + (cell.other ? " other-month" : "") + (dateStr === tStr ? " today" : "");
+    cellEl.className = "day-cell" + (other ? " other-month" : "") + (dateStr === tStr ? " today" : "");
     cellEl.dataset.date = dateStr;
 
     const numEl = document.createElement("div");
     numEl.className = "day-num";
-    numEl.textContent = cell.day;
+    numEl.textContent = date.getDate();
     cellEl.appendChild(numEl);
 
     const dayEvents = events
@@ -252,12 +247,10 @@ function renderCalendar() {
     dayEvents.slice(0, MAX_SHOWN).forEach(ev => {
       const chip = document.createElement("div");
       chip.className = "event-chip";
-      chip.dataset.eventId = ev.id;
       chip.style.background = categoryColor(ev.category);
       const isStart = dateStr === ev.date;
       chip.textContent = isStart ? (ev.time ? ev.time + " " : "") + ev.title : "→ " + ev.title;
-      chip.addEventListener("click", (e) => e.stopPropagation());
-      attachChipHoldDrag(chip, ev);
+      chip.onclick = (e) => { e.stopPropagation(); openModal(ev.date, ev); };
       cellEl.appendChild(chip);
     });
     if (dayEvents.length > MAX_SHOWN) {
@@ -268,159 +261,15 @@ function renderCalendar() {
     }
 
     cellEl.onclick = () => openModal(dateStr, null);
-    gridEl.appendChild(cellEl);
-  });
-}
-
-// ── Hold-and-drag an event chip to extend it across days ──
-const HOLD_MS = 500;
-const MOVE_CANCEL_PX = 8;
-let dragState = null;
-
-function dateAtPoint(x, y) {
-  const el = document.elementFromPoint(x, y);
-  const cell = el && el.closest(".day-cell[data-date]");
-  return cell ? cell.dataset.date : null;
-}
-
-function clearDropPreview() {
-  document.querySelectorAll(".day-cell.drop-preview").forEach(el => el.classList.remove("drop-preview"));
-}
-
-function showDropPreview(startStr, endStr) {
-  clearDropPreview();
-  document.querySelectorAll(".day-cell[data-date]").forEach(cellEl => {
-    const d = cellEl.dataset.date;
-    if (d >= startStr && d <= endStr) cellEl.classList.add("drop-preview");
-  });
-}
-
-function markChipsDragging(eventId, on) {
-  document.querySelectorAll('.event-chip[data-event-id="' + eventId + '"]').forEach(el => el.classList.toggle("dragging", on));
-}
-
-function attachChipHoldDrag(chip, ev) {
-  chip.addEventListener("pointerdown", (e) => {
-    if (e.button !== undefined && e.button !== 0) return;
-    const state = { ev, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, dragging: false, previewDate: null, chip };
-    state.onMove = (moveEv) => handleDragMove(moveEv, state);
-    state.onUp = (upEv) => handleDragUp(upEv, state);
-    state.timer = setTimeout(() => activateDrag(state), HOLD_MS);
-    dragState = state;
-    document.addEventListener("pointermove", state.onMove);
-    document.addEventListener("pointerup", state.onUp);
-    document.addEventListener("pointercancel", state.onUp);
-  });
-}
-
-function activateDrag(state) {
-  if (dragState !== state) return;
-  state.dragging = true;
-  markChipsDragging(state.ev.id, true);
-  try { document.body.setPointerCapture(state.pointerId); } catch (e) {}
-  updateDragTarget(state, state.lastX ?? state.startX, state.lastY ?? state.startY);
-}
-
-function handleDragMove(e, state) {
-  if (dragState !== state) return;
-  state.lastX = e.clientX;
-  state.lastY = e.clientY;
-  if (!state.dragging) {
-    const dist = Math.hypot(e.clientX - state.startX, e.clientY - state.startY);
-    if (dist > MOVE_CANCEL_PX) endDrag(state); // moved before hold completed — cancel, allow normal scroll/tap
-    return;
-  }
-  e.preventDefault();
-  updateDragTarget(state, e.clientX, e.clientY);
-  updateEdgeAutoAdvance(state, e.clientY);
-}
-
-function updateDragTarget(state, x, y) {
-  // Clamp to the grid's own bounds so a pointer held past the last/first row
-  // (e.g. deep in the edge-advance zone) still resolves to that row's date.
-  const rect = gridEl.getBoundingClientRect();
-  const cx = Math.min(Math.max(x, rect.left + 1), rect.right - 1);
-  const cy = Math.min(Math.max(y, rect.top + 1), rect.bottom - 1);
-  const dateStr = dateAtPoint(cx, cy);
-  if (!dateStr) return;
-  state.previewDate = dateStr;
-  const origStart = state.ev.date;
-  const origEnd = state.ev.endDate || state.ev.date;
-  const newStart = dateStr < origStart ? dateStr : origStart;
-  const newEnd = dateStr > origEnd ? dateStr : origEnd;
-  showDropPreview(newStart, newEnd);
-}
-
-// ── Auto-advance the month when a drag is held near the top/bottom edge of the screen ──
-const EDGE_ZONE = 70; // px from the screen edge that triggers auto-advance
-const EDGE_SLOWEST_MS = 350; // just entered the edge zone
-const EDGE_FASTEST_MS = 90; // right at the screen edge
-
-function updateEdgeAutoAdvance(state, y) {
-  const rect = gridEl.getBoundingClientRect();
-  let direction = 0, dist = 0;
-  if (y > rect.bottom - EDGE_ZONE) { direction = 1; dist = y - (rect.bottom - EDGE_ZONE); }
-  else if (y < rect.top + EDGE_ZONE) { direction = -1; dist = (rect.top + EDGE_ZONE) - y; }
-
-  if (direction === 0) { clearEdgeAdvance(state); return; }
-
-  const proximity = Math.min(1, dist / EDGE_ZONE); // 0 at zone boundary, 1 at the very edge
-  const interval = EDGE_SLOWEST_MS - (EDGE_SLOWEST_MS - EDGE_FASTEST_MS) * proximity;
-  state.edgeInterval = interval;
-
-  if (state.edgeDirection !== direction) {
-    clearTimeout(state.edgeTimer);
-    state.edgeDirection = direction;
-    scheduleEdgeAdvance(state);
+    container.appendChild(cellEl);
   }
 }
 
-function scheduleEdgeAdvance(state) {
-  state.edgeTimer = setTimeout(() => {
-    if (dragState !== state || !state.edgeDirection) return;
-    viewDate.setMonth(viewDate.getMonth() + state.edgeDirection);
-    renderCalendar();
-    markChipsDragging(state.ev.id, true);
-    if (state.lastX != null) updateDragTarget(state, state.lastX, state.lastY);
-    scheduleEdgeAdvance(state);
-  }, state.edgeInterval);
-}
-
-function clearEdgeAdvance(state) {
-  clearTimeout(state.edgeTimer);
-  state.edgeTimer = null;
-  state.edgeDirection = 0;
-}
-
-function handleDragUp(e, state) {
-  if (dragState !== state) return;
-  if (state.dragging && state.previewDate) {
-    const dateStr = state.previewDate;
-    const ev = events.find(x => x.id === state.ev.id);
-    if (ev) {
-      const origEnd = ev.endDate || ev.date;
-      if (dateStr < ev.date) ev.date = dateStr;
-      else if (dateStr > origEnd) ev.endDate = dateStr;
-      renderCalendar();
-      scheduleSave();
-    }
-  } else if (!state.dragging) {
-    const dist = Math.hypot(e.clientX - state.startX, e.clientY - state.startY);
-    if (dist <= MOVE_CANCEL_PX) openModal(state.ev.date, state.ev);
-  }
-  endDrag(state);
-}
-
-function endDrag(state) {
-  clearTimeout(state.timer);
-  clearEdgeAdvance(state);
-  document.removeEventListener("pointermove", state.onMove);
-  document.removeEventListener("pointerup", state.onUp);
-  document.removeEventListener("pointercancel", state.onUp);
-  markChipsDragging(state.ev.id, false);
-  try { document.body.releasePointerCapture(state.pointerId); } catch (e) {}
-  clearDropPreview();
-  if (dragState === state) dragState = null;
+function renderCalendar() {
+  const refDate = new Date(gridAnchor);
+  refDate.setDate(refDate.getDate() + 17); // roughly the middle of the 6-week window
+  monthLabel.textContent = refDate.toLocaleString("default", { month: "long", year: "numeric" });
+  buildWeekGrid(gridEl, gridAnchor, refDate.getFullYear(), refDate.getMonth());
 }
 
 // ── Date field popover (pick a date, then pick another to extend the range) ──
@@ -586,30 +435,39 @@ deleteBtn.onclick = () => {
 };
 
 // ── Nav ──
-document.getElementById("prev-btn").onclick = () => { viewDate.setMonth(viewDate.getMonth() - 1); renderCalendar(); };
-document.getElementById("next-btn").onclick = () => { viewDate.setMonth(viewDate.getMonth() + 1); renderCalendar(); };
-document.getElementById("today-btn").onclick = () => { viewDate = new Date(); viewDate.setDate(1); renderCalendar(); };
+function shiftMonth(delta) {
+  const ref = new Date(gridAnchor);
+  ref.setDate(ref.getDate() + 17);
+  gridAnchor = monthStartAnchor(ref.getFullYear(), ref.getMonth() + delta);
+  renderCalendar();
+}
+document.getElementById("prev-btn").onclick = () => shiftMonth(-1);
+document.getElementById("next-btn").onclick = () => shiftMonth(1);
+document.getElementById("today-btn").onclick = () => {
+  const now = new Date();
+  gridAnchor = monthStartAnchor(now.getFullYear(), now.getMonth());
+  renderCalendar();
+};
 document.getElementById("add-fab").onclick = () => openModal(todayStr(), null);
 
-// ── Swipe up/down on the grid to change months ──
+// ── Drag up/down on the grid to move a week at a time ──
 const SWIPE_TRIGGER_PX = 55;
 let swipeState = null;
 let suppressGridClick = false;
 
 gridEl.addEventListener("pointerdown", (e) => {
-  if (dragState) return; // an event-chip hold-drag owns this gesture
   if (e.button !== undefined && e.button !== 0) return;
   suppressGridClick = false;
   swipeState = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY };
 });
 
 document.addEventListener("pointermove", (e) => {
-  if (!swipeState || swipeState.pointerId !== e.pointerId || dragState) return;
+  if (!swipeState || swipeState.pointerId !== e.pointerId) return;
   const dx = e.clientX - swipeState.startX;
   const dy = e.clientY - swipeState.startY;
   if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) e.preventDefault();
   if (Math.abs(dy) > SWIPE_TRIGGER_PX && Math.abs(dy) > Math.abs(dx)) {
-    viewDate.setMonth(viewDate.getMonth() + (dy < 0 ? 1 : -1));
+    gridAnchor.setDate(gridAnchor.getDate() + (dy < 0 ? 7 : -7));
     renderCalendar();
     swipeState.startX = e.clientX;
     swipeState.startY = e.clientY;

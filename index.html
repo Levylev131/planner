@@ -15,7 +15,7 @@
 
 <div class="top-bar">
   <div class="title-row">
-    <h1 class="app-title">Our Calendar</h1>
+    <h1 id="app-title" class="app-title" contenteditable="true" spellcheck="false" title="Click to rename">Our Calendar</h1>
     <span id="sync-dot" class="sync-dot" title="Connecting..."></span>
   </div>
   <div class="nav-row">
@@ -48,14 +48,21 @@
     <label class="field-label">Title</label>
     <input id="f-title" type="text" placeholder="Dinner with...">
 
-    <div class="field-row">
-      <div>
-        <label class="field-label">Date</label>
-        <input id="f-date" type="date">
-      </div>
-      <div>
-        <label class="field-label">End date (optional)</label>
-        <input id="f-end-date" type="date">
+    <label class="field-label">Date</label>
+    <div class="date-field">
+      <button type="button" id="f-date-display" class="date-display"></button>
+      <div id="date-popover" class="date-popover hidden">
+        <div class="dp-nav">
+          <button type="button" id="dp-prev" class="dp-nav-btn" aria-label="Previous month">&#8592;</button>
+          <span id="dp-month-label" class="dp-month-label"></span>
+          <button type="button" id="dp-next" class="dp-nav-btn" aria-label="Next month">&#8594;</button>
+        </div>
+        <div class="dp-weekdays"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+        <div id="dp-grid" class="dp-grid"></div>
+        <div class="dp-actions">
+          <button type="button" id="dp-clear" class="btn btn-ghost btn-small">Single day</button>
+          <button type="button" id="dp-done" class="btn btn-primary btn-small">Done</button>
+        </div>
       </div>
     </div>
 

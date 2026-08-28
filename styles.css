@@ -39,7 +39,15 @@ body {
 .app-title {
   font-size: 22px;
   font-weight: 700;
+  cursor: text;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  outline: none;
+  border-bottom: 1px dashed transparent;
 }
+.app-title:hover { border-bottom-color: var(--border); }
+.app-title:focus { border-bottom-color: var(--accent); background: #f7fafc; }
 
 .sync-dot {
   width: 9px;
@@ -58,20 +66,22 @@ body {
 }
 
 .nav-btn {
-  width: 34px;
-  height: 34px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--card);
-  font-size: 16px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
   cursor: pointer;
 }
 .nav-btn:hover { background: #edf2f7; }
 
 .month-label {
-  font-weight: 600;
-  font-size: 16px;
-  min-width: 140px;
+  font-weight: 700;
+  font-size: 20px;
+  min-width: 170px;
   text-align: center;
 }
 
@@ -139,6 +149,7 @@ body {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
+  touch-action: none;
 }
 
 .day-cell {
@@ -173,6 +184,20 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+.event-chip.dragging {
+  opacity: 0.6;
+  cursor: grabbing;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--accent);
+}
+
+.day-cell.drop-preview {
+  background: #e0e7ff;
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
 }
 
 .event-more {
@@ -266,6 +291,96 @@ textarea { resize: vertical; }
   gap: 10px;
 }
 
+/* ── Date field + popover ── */
+.date-field { position: relative; }
+
+.date-display {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.date-display:hover { background: #f7fafc; }
+
+.date-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  width: 260px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+  padding: 10px;
+}
+.date-popover.hidden { display: none; }
+
+.dp-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.dp-nav-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: 13px;
+  cursor: pointer;
+}
+.dp-nav-btn:hover { background: #edf2f7; }
+.dp-month-label { font-size: 13px; font-weight: 600; }
+
+.dp-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 2px 0;
+}
+
+.dp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin: 2px 0 8px;
+}
+
+.dp-day {
+  aspect-ratio: 1;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.dp-day:hover { background: #edf2f7; }
+.dp-day.other { color: #cbd5e0; }
+.dp-day.in-range { background: #e0e7ff; border-radius: 0; }
+.dp-day.range-start { background: var(--accent); color: #fff; border-radius: 6px 0 0 6px; }
+.dp-day.range-end { background: var(--accent); color: #fff; border-radius: 0 6px 6px 0; }
+.dp-day.range-start.range-end { border-radius: 6px; }
+
+.dp-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.btn-small { padding: 5px 10px; font-size: 12px; }
+
 .added-by-row {
   font-size: 12px;
   color: var(--muted);
@@ -316,6 +431,7 @@ textarea { resize: vertical; }
 
 @media (max-width: 480px) {
   .day-cell { min-height: 68px; }
-  .month-label { min-width: 110px; font-size: 14px; }
+  .month-label { min-width: 130px; font-size: 17px; }
+  .nav-btn { width: 42px; height: 42px; font-size: 21px; }
   .field-row { grid-template-columns: 1fr; }
 }
